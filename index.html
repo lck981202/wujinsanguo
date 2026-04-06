@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>无尽三国 2.2</title>
+    <style>
+        /* === 全局重置 === */
+        * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; font-family: "Microsoft YaHei", sans-serif; }
+        body { background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+        
+        /* === 舞台 (容器) === */
+        #stage { position: relative; width: 1280px; height: 900px; background: #111; box-shadow: 0 0 20px #000; overflow: hidden; border: 2px solid #444; }
+        
+        /* === 图层 1：地图 (最底层) === */
+        #map-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+        #map-img { width: 100%; height: 100%; object-fit: fill; }
+        
+        /* === 图层 2：城池 (中间层) === */
+        #city-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 20; pointer-events: none; }
+        .city-point { position: absolute; width: 14px; height: 14px; border-radius: 50%; transform: translate(-50%, -50%); cursor: pointer; pointer-events: auto; transition: 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.5); border: 2px solid rgba(255,255,255,0.3); }
+        .city-point:hover { transform: scale(1.5); border-color: #fff !important; z-index: 100; box-shadow: 0 0 8px #fff; }
+        .city-name-label { position: absolute; left: 18px; top: -1px; color: #fff; font-size: 12px; font-weight: bold; text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; white-space: nowrap; pointer-events: none; z-index: 25; }
+
+        /* === 图层 3：UI 面板 (最上层) === */
+        /* 左侧菜单 */
+        #left-menu { position: absolute; top: 80px; left: 10px; width: 160px; z-index: 60; pointer-events: auto; display: flex; flex-direction: column; gap: 5px; }
+        .menu-btn { background: linear-gradient(to right, #333, #111); border: 1px solid #555; padding: 8px 10px; color: #ffd700; font-size: 14px; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        .menu-btn:hover { background: #444; }
+        .sub-panel { display: none; position: absolute; top: 0; left: 140px; width: 200px; background: rgba(10,10,10,0.95); border: 1px solid #555; border-radius: 4px; padding: 10px; color: #ccc; font-size: 12px; box-shadow: 2px 2px 10px #000; z-index: 61; }
+        .sub-panel.show { display: block; }
+
+        /* 稳定性面板 */
+        #stability-panel { position: absolute; top: 10px; left: 200px; width: 180px; height: 40px; background: rgba(0,0,0,0.8); border: 1px solid #ffd700; border-radius: 5px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 14px; z-index: 60; cursor: pointer; }
+        #stability-details { display: none; position: absolute; top: 55px; left: 200px; width: 180px; background: rgba(10,10,10,0.95); border: 1px solid #ffd700; color: #fff; z-index: 60; max-height: 200px; overflow-y: auto; }
+
+        /* 事件日志 */
+        #event-log { position: absolute; bottom: 10px; left: 10px; width: 300px; height: 150px; background: rgba(0,0,0,0.85); border: 1px solid #ffd700; border-radius: 5px; padding: 5px; overflow-y: auto; z-index: 60; }
+        .log-header { color: #ffd700; text-align: center; font-size: 12px; border-bottom: 1px solid #444; padding-bottom: 2px; margin-bottom: 4px; }
+        .log-item { font-size: 11px; color: #ccc; margin: 2px 0; padding-left: 4px; border-left: 2px solid #555; }
+        .log-good { color: #4caf50; border-color: #4caf50; } .log-bad { color: #f44336; border-color: #f44336; }
+
+        /* 顶部 HUD */
+        #hud-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 50; }
+        .hud-bar { position: absolute; top: 10px; left: 400px; right: 10px; display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.8); padding: 8px; border-radius: 8px; border: 1px solid #ffd700; pointer-events: auto; }
+        .hud-time { font-size: 18px; color: #fff; }
+        .btn-turn { padding: 5px 15px; background: #4caf50; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; }
+        
+        /* 侧边栏 (z-index 200) */
+        #city-sidebar { position: absolute; top: 0; right: -400px; width: 320px; height: 100%; background: rgba(10,10,15,0.95); border-left: 3px solid #ffd700; z-index: 200; pointer-events: auto; transition: right 0.3s; color: #fff; display: flex; flex-direction: column; }
+        #city-sidebar.open { right: 0; }
+        .sidebar-header { padding: 20px; background: #222; border-bottom: 1px solid #444; display: flex; justify-content: space-between; }
+        .sidebar-header h2 { color: #ffd700; font-size: 20px; font-family: "KaiTi"; }
+        .close-btn { cursor: pointer; font-size: 24px; color: #aaa; }
+        .close-btn:hover { color: #fff; }
+        .sidebar-content { padding: 20px; overflow-y: auto; flex: 1; }
+        .sb-row { display: flex; justify-content: space-between; margin-bottom: 10px; border-bottom: 1px dashed #444; padding-bottom: 5px; }
+        .sb-label { color: #888; } .sb-val { color: #fff; font-weight: bold; }
+        .portrait-box { width: 80px; height: 80px; border-radius: 50%; border: 2px solid #555; margin: 10px auto; overflow: hidden; background: #333; }
+        .portrait-box img { width: 100%; height: 100%; object-fit: cover; }
+        .action-area { margin-top: 20px; }
+        .btn-action { width: 100%; padding: 10px; margin-bottom: 10px; font-size: 14px; border: none; border-radius: 4px; cursor: pointer; color: #fff; display: flex; justify-content: space-between; }
+        .btn-recruit { background: #8b0000; } .btn-buy { background: #b8860b; } .btn-attack { background: #2e8b57; }
+        .btn-disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* 弹窗 (z-index 1000) */
+        #modal-attack { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; display: flex; justify-content: center; align-items: center; pointer-events: auto; }
+        #modal-attack.hidden { display: none; }
+        .modal-box { background: #222; border: 2px solid #ffd700; padding: 20px; border-radius: 10px; width: 400px; text-align: center; color: #fff; }
+        .modal-list { display: flex; flex-direction: column; gap: 10px; margin: 15px 0; max-height: 200px; overflow-y: auto; }
+        .modal-btn { padding: 10px; background: #444; border: 1px solid #666; color: #fff; cursor: pointer; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
+        .modal-btn:hover { background: #555; border-color: #ffd700; }
+        
+        /* 战术选择下拉框 */
+        #tactic-select { background: #333; color: #fff; border: 1px solid #666; padding: 5px; border-radius: 4px; margin-bottom: 10px; width: 100%; }
+
+        /* 菜单层 (z-index 2000) */
+        .menu-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2000; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; pointer-events: auto; }
+        .menu-layer.hidden { display: none !important; }
+        .menu-bg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7) url('images/bg_new.png') center/cover no-repeat; z-index: -1; }
+        .scenario-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; max-width: 1100px; margin: 20px 0; }
+        .scenario-card { width: 300px; padding: 15px; background: rgba(30,30,30,0.9); border: 2px solid #444; border-radius: 8px; cursor: pointer; text-align: left; }
+        .scenario-card:hover { border-color: #ffd700; background: #222; }
+        .scenario-card h3 { color: #ffd700; margin-bottom: 5px; }
+        .scenario-card p { color: #ccc; font-size: 13px; }
+        .lord-grid { display: flex; gap: 15px; margin: 15px 0; flex-wrap: wrap; justify-content: center; }
+        .lord-card { width: 180px; background: #111; border: 2px solid #444; border-radius: 10px; padding: 10px; cursor: pointer; text-align: center; }
+        .lord-card:hover { border-color: #888; }
+        .lord-card.selected { border-color: #4caf50; background: #0a2a0a; }
+        .lord-portrait { width: 100px; height: 100px; background: #333; margin: 0 auto 5px; border-radius: 50%; overflow: hidden; }
+        .lord-portrait img { width: 100%; height: 100%; object-fit: cover; }
+        .btn-main { padding: 12px 30px; font-size: 20px; background: #800; color: #ffd700; border: 2px solid #ffd700; border-radius: 6px; cursor: pointer; margin-top: 15px; }
+        .btn-start { padding: 10px 40px; font-size: 18px; background: #4caf50; color: #fff; border: none; border-radius: 4px; cursor: pointer; margin-top: 15px; display: none; }
+        .btn-start.visible { display: block; }
+        .btn-back { padding: 8px 25px; font-size: 14px; background: #333; color: #aaa; border: 1px solid #555; border-radius: 4px; cursor: pointer; margin-top: 20px; }
+    
+        /* 外交系统样式 v2.3 */
+        .dip-item { background: #1a1a1a; margin: 5px 0; padding: 6px; border-radius: 4px; border: 1px solid #333; }
+        .dip-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+        .dip-header:hover { background: #252525; }
+        .dip-bar-bg { width: 100%; height: 6px; background: #333; border-radius: 3px; margin: 4px 0; }
+        .dip-bar { height: 100%; border-radius: 3px; transition: width 0.3s; }
+        .dip-status { font-size: 10px; padding: 2px 4px; border-radius: 3px; background: #222; }
+        .dip-actions { margin-top: 5px; display: none; flex-wrap: wrap; gap: 5px; }
+        .dip-actions.show { display: flex; }
+        .dip-btn { font-size: 10px; padding: 3px 6px; cursor: pointer; border: 1px solid #444; background: #2a2a2a; color: #ccc; border-radius: 3px; }
+        .dip-btn:hover { background: #333; color: #fff; }
+        .dip-btn.gold { border-color: #ffd700; color: #ffd700; }
+
+    </style>
+</head>
+<body>
+    <div id="stage">
+        <!-- 1. Map Layer (Bottom) -->
+        <div id="map-layer"><img id="map-img" src="images/satellite_map.png"></div>
+        
+        <!-- 2. City Layer (Middle) -->
+        <div id="city-layer"></div>
+
+        <!-- 3. UI Panels (Top) -->
+        <div id="left-menu">
+            <div class="menu-btn" onclick="togglePanel('war')">⚔️ 军事系统 <span>▶</span></div>
+            <div id="panel-war" class="sub-panel"><div style="color:#ffd700; margin-bottom:5px; border-bottom:1px solid #444; padding-bottom:3px;">军事行动</div><p>🛡️ 征兵</p><p>🏯 筑城</p></div>
+            <div class="menu-btn" onclick="togglePanel('dip')">🤝 外交系统 <span>▶</span></div>
+            <div id="panel-dip" class="sub-panel">
+            <div style="color:#ffd700; margin-bottom:5px; border-bottom:1px solid #444; padding-bottom:3px;">外交策略 (点击势力展开)</div>
+            <div id="dip-list"></div>
+        </div>
+        </div>
+
+        <div id="stability-panel" onclick="toggleStability()">📊 稳定度 <span id="stab-summary" style="margin-left:5px;">计算中</span></div>
+        <div id="stability-details" style="padding:5px; font-size:12px;"></div>
+
+        
+        <div id="my-faction-panel">
+            <div style="color: #ffd700; font-size: 14px; font-weight: bold; margin-bottom: 5px; border-bottom: 1px solid #444; padding-bottom: 3px;">🏛️ 我的势力</div>
+            <div class="sb-row"><span class="sb-label">🏯 城池</span><span class="sb-val" id="mf-cities">0</span></div>
+            <div class="sb-row"><span class="sb-label">👥 人口</span><span class="sb-val" id="mf-pop">0</span></div>
+            <div class="sb-row"><span class="sb-label">⚔️ 兵力</span><span class="sb-val" id="mf-troops">0</span></div>
+            <div class="sb-row"><span class="sb-label">💰 黄金</span><span class="sb-val" id="mf-gold">0</span></div>
+            <div class="sb-row"><span class="sb-label">🌾 粮草</span><span class="sb-val" id="mf-grain">0</span></div>
+        </div>
+
+        <div id="event-log"><div class="log-header">📜 天下大事</div><div id="log-content"></div></div>
+
+        <!-- HUD -->
+        <div id="hud-layer" style="display:none;">
+            <div id="game-title" style="position: absolute; top: 10px; left: 10px; font-size: 24px; color: #ffd700; font-family: 'KaiTi'; font-weight: bold; text-shadow: 2px 2px 0 #000; z-index: 55; display: none;">无尽三国 2.2</div>
+            <div class="hud-bar">
+                <div class="hud-time">📅 <span id="hud-time">184 年 1 月</span> &nbsp;|&nbsp; ⚡ <span id="hud-ap">5</span></div>
+                <button class="btn-turn" onclick="nextTurn()">结束回合 >></button>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div id="city-sidebar">
+            <div class="sidebar-header"><h2 id="sb-city-name">城池</h2><div class="close-btn" onclick="closeSidebar()">×</div></div>
+            <div class="sidebar-content">
+                <div class="portrait-box"><img id="sb-portrait" src=""></div>
+                <div class="sb-row"><span class="sb-label">势力</span><span class="sb-val" id="sb-faction" style="color:#fff"></span></div>
+                <div class="sb-row"><span class="sb-label">🏯 城防</span><span class="sb-val" id="sb-defense"></span></div>
+                <div class="sb-row"><span class="sb-label">👥 人口</span><span class="sb-val" id="sb-pop"></span></div>
+                <div class="sb-row"><span class="sb-label">⚔️ 兵力</span><span class="sb-val" id="sb-troops"></span></div>
+                <div class="sb-row"><span class="sb-label">🌾 粮草</span><span class="sb-val" id="sb-grain"></span></div>
+                <div class="sb-row"><span class="sb-label">💰 黄金</span><span class="sb-val" id="sb-gold"></span></div>
+                <div id="sb-actions" class="action-area"></div>
+            </div>
+        </div>
+
+        <!-- Attack Modal -->
+        <div id="modal-attack" class="hidden">
+            <div class="modal-box">
+                <h2 style="color:#ffd700">⚔️ 攻城</h2>
+                <p style="color:#aaa; margin:5px 0;">选择战术：</p>
+                <select id="tactic-select">
+                    <option value="normal">🗡️ 普通攻击 (稳扎稳打)</option>
+                    <option value="assault">🔥 强攻 (伤害 x1.3，战损增加)</option>
+                    <option value="raid">🌙 夜袭 (高风险，奇袭翻倍)</option>
+                </select>
+                <div id="attack-source-list" class="modal-list"></div>
+                <button class="btn-back" style="margin:0 auto; display:block;" onclick="closeAttackModal()">取消</button>
+            </div>
+        </div>
+
+        <!-- Menus -->
+        <div id="menu-main" class="menu-layer"><div class="menu-bg"></div>
+            <h1 style="font-size:60px; color:#ffd700; text-shadow:0 0 20px #a00; font-family:KaiTi; margin-bottom:10px;">无尽三国 2.2</h1>
+            <button class="btn-main" onclick="showScenarioSelect()">开始游戏</button>
+        </div>
+        <div id="menu-scenario" class="menu-layer hidden"><div class="menu-bg"></div>
+            <h2 style="color:#ffd700; margin-bottom:20px;">选择时代</h2>
+            <div class="scenario-grid" id="scenario-list"></div>
+            <button class="btn-back" onclick="showMainMenu()">返回</button>
+        </div>
+        <div id="menu-lord" class="menu-layer hidden"><div class="menu-bg"></div>
+            <h2 style="color:#ffd700; margin-bottom:10px;" id="lord-title">选择主公</h2>
+            <div class="lord-grid" id="lord-list"></div>
+            <button class="btn-start" id="btn-enter-game" onclick="enterGame()">进入天下</button>
+            <button class="btn-back" onclick="showScenarioSelect()">返回</button>
+        </div>
+    </div>
+    <script src="data.js"></script>
+    <script src="data_scenarios.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
